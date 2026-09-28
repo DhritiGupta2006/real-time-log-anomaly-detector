@@ -1,0 +1,76 @@
+# Two deployment shapes of the SAME code base:
+#   docker compose --profile monolith up --build        -> http://localhost:8000
+#   docker compose --profile microservices up --build   -> http://localhost:8080
+x-app: &app
+  build: .
+  restart: unless-stopped
+  env_file:
+    - path: .env
+      required: false
+  environment: &env
+    LOG_FILE: /app/logs/app.log
+    CONTROL_FILE: /app/logs/sim_control.json
+    DETECTION_URL: http://detection:8002
+    ALERTS_URL: http://alerts:8003
+  volumes:
+    - logs:/app/logs
+
+x-health: &health
+  interval: 5s
+  timeout: 3s
+  retries: 6
+  start_period: 5s
+
+services:
+  simulator:            # demo traffic generator (writes the growing log file)
+    <<: *app
+    command: python -m simulator.log_simulator
+    healthcheck: { disable: true }
+
+  # ---------- Shape A: modular monolith ----------
+  app:
+    <<: *app
+    profiles: [monolith]
+    ports: ["8000:8000"]
+    healthcheck:
+      <<: *health
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/health', timeout=2)"]
+
+  # ---------- Shape B: microservices ----------
+  monitoring:
+    <<: *app
+    profiles: [microservices]
+    command: uvicorn services.monitoring.app:app --host 0.0.0.0 --port 8001
+    depends_on: { detection: { condition: service_healthy } }
+    healthcheck:
+      <<: *health
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8001/health', timeout=2)"]
+
+  detection:
+    <<: *app
+    profiles: [microservices]
+    command: uvicorn services.detection.app:app --host 0.0.0.0 --port 8002
+    depends_on: { alerts: { condition: service_healthy } }
+    healthcheck:
+      <<: *health
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8002/health', timeout=2)"]
+
+  alerts:
+    <<: *app
+    profiles: [microservices]
+    command: uvicorn services.alerts.app:app --host 0.0.0.0 --port 8003
+    healthcheck:
+      <<: *health
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8003/health', timeout=2)"]
+
+  gateway:
+    profiles: [microservices]
+    build: { context: ., dockerfile: frontend/Dockerfile }
+    ports: ["8080:80"]
+    depends_on: { alerts: { condition: service_healthy } }
+    healthcheck:
+      <<: *health
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost/"]
+
+volumes:
+  logs:
