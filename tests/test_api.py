@@ -38,11 +38,13 @@ def test_state_alerts_and_websocket_snapshot(tmp_path):
     asyncio.run(app.state.alerts.handle_metrics(M(3, 100)))
     c = TestClient(app)
     st = c.get("/api/state").json()
-    assert st["metrics"]["severity"] == 3 and len(st["alerts"]) == 1
+    # New-wire: /api/state returns {tick, alerts_recent, active_incident, status}
+    assert st["tick"]["status"] == "ANOMALY" and len(st["alerts_recent"]) == 1
     assert c.get("/api/alerts").json()[0]["status"] == "ACTIVE"
     with c.websocket_connect("/ws") as ws:
         snap = ws.receive_json()
-        assert snap["type"] == "snapshot" and snap["alerts"][0]["severity_name"] in {
+        # New-wire snapshot: alerts[] uses "severity" key (not "severity_name")
+        assert snap["type"] == "snapshot" and snap["alerts"][0]["severity"] in {
             "HIGH",
             "MEDIUM",
             "CRITICAL",

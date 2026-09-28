@@ -93,9 +93,9 @@ def build_router(
         ]
         return Response(content="\n".join(lines) + "\n", media_type="text/plain")
 
-    @r.get("/api/state")  # stateless polling fallback; identical payload to the WS snapshot
+    @r.get("/api/state")  # REST polling fallback for useWebSocket.ts pollState()
     def state():
-        return svc.snapshot()
+        return svc.state_for_polling()
 
     @r.get("/api/alerts")
     def alerts():

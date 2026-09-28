@@ -24,7 +24,7 @@ class Settings:
     # paths
     log_file: str = "logs/app.log"
     control_file: str = "logs/sim_control.json"
-    frontend_dir: str = "frontend"
+    frontend_dir: str = "frontend/dist"
     journal_file: str = "logs/journal.jsonl"
     dlq_file: str = "logs/dlq.jsonl"
 
