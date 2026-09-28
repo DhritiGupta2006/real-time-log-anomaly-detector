@@ -33,7 +33,6 @@ def test_healthz_readyz_and_metrics(tmp_path):
     assert r_met.status_code == 200 and "logpulse_uptime_seconds" in r_met.text
 
 
-
 def test_state_alerts_and_websocket_snapshot(tmp_path):
     app, _ = make(tmp_path)
     asyncio.run(app.state.alerts.handle_metrics(M(3, 100)))

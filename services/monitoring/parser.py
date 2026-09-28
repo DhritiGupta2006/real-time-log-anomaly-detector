@@ -30,9 +30,7 @@ _PHI_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ),
     # Patient / member / MRN identifiers
     (
-        re.compile(
-            r"(?i)\b(?:mrn|member[_ ]?id|patient[_ ]?id)\s*[:=]\s*[A-Za-z0-9\-]{5,}"
-        ),
+        re.compile(r"(?i)\b(?:mrn|member[_ ]?id|patient[_ ]?id)\s*[:=]\s*[A-Za-z0-9\-]{5,}"),
         "[REDACTED_ID]",
     ),
     # Date of birth
@@ -57,6 +55,7 @@ _VALID = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 # --------------------------------------------------------------------------- #
 #  Public API                                                                 #
 # --------------------------------------------------------------------------- #
+
 
 def phi_redactor(text: str) -> tuple[str, int]:
     """Redact PHI/PII patterns from *text*.

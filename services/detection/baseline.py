@@ -53,11 +53,11 @@ class Baseline:
         self.cooldown_seconds = cooldown_seconds
 
         self._obs: deque[float] = deque(maxlen=max_samples)  # MAD window for error rate
-        self._ewma_rate: float | None = None                 # p0
-        self._ewma_volume: float | None = None               # expected_volume
+        self._ewma_rate: float | None = None  # p0
+        self._ewma_volume: float | None = None  # expected_volume
 
         self._frozen = False
-        self._unfreeze_wall: float | None = None             # None = not cooling down
+        self._unfreeze_wall: float | None = None  # None = not cooling down
 
     # ---------------------------------------------------------------------- #
     #  Freeze control (called by engine on suspicion, spec §6.2)             #

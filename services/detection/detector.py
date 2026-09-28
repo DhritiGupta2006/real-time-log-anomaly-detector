@@ -16,7 +16,7 @@ Each evaluation, per service, the detector emits detections for:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 from shared.config import Settings
 from shared.models import Severity
@@ -25,7 +25,7 @@ from .baseline import Baseline
 from .severity import Thresholds, classify
 
 
-class DetectionState(str, Enum):
+class DetectionState(StrEnum):
     TRIGGERED = "TRIGGERED"
     HOLD = "HOLD"
     CLEAR = "CLEAR"
@@ -150,11 +150,7 @@ class Detector:
             "ratio": (current_rps / expected) if (expected and expected > 0) else None,
         }
 
-        if (
-            not baseline.ready
-            or expected is None
-            or expected < self.s.volume_min_expected_rps
-        ):
+        if not baseline.ready or expected is None or expected < self.s.volume_min_expected_rps:
             # Quiet service or baseline not ready
             self._vol_low_streak = 0
             self._vol_state = DetectionState.CLEAR

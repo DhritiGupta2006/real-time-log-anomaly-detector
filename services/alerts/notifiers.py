@@ -29,8 +29,8 @@ TARGETS = ("sns", "cloudwatch")
 # Retry / backoff constants (spec §10.4).
 # Also exposed as class attributes so tests can monkeypatch to avoid real sleeps.
 _MAX_ATTEMPTS = 6
-_BASE_DELAY = 1.0     # seconds
-_MAX_DELAY = 60.0     # cap for exponential backoff
+_BASE_DELAY = 1.0  # seconds
+_MAX_DELAY = 60.0  # cap for exponential backoff
 
 # Circuit-breaker constants (kept for backward compat with existing tests)
 _BREAKER_FAILS = 3
@@ -64,8 +64,7 @@ class AwsNotifier:
         self._fails = dict.fromkeys(TARGETS, 0)
         self._open_until = dict.fromkeys(TARGETS, 0.0)
         self._stats = {
-            t: {"sent": 0, "failed": 0, "skipped": 0, "retries": 0, "dlq": 0, "last_error": None}
-            for t in TARGETS
+            t: {"sent": 0, "failed": 0, "skipped": 0, "retries": 0, "dlq": 0, "last_error": None} for t in TARGETS
         }
 
     # ------------------------------------------------------------------ #
@@ -79,10 +78,7 @@ class AwsNotifier:
             "region": self.s.aws_region,
             "sns_topic_configured": bool(self.s.sns_topic_arn),
             "cw_log_group": self.s.cw_log_group,
-            "targets": {
-                t: {**self._stats[t], "circuit_open": now < self._open_until[t]}
-                for t in TARGETS
-            },
+            "targets": {t: {**self._stats[t], "circuit_open": now < self._open_until[t]} for t in TARGETS},
         }
 
     async def notify(self, ev: AlertEvent) -> list[dict]:
@@ -154,7 +150,7 @@ class AwsNotifier:
         for attempt in range(1, max_attempts + 1):
             try:
                 detail = fn(ev)
-                self._fails[target] = 0          # success resets consecutive counter
+                self._fails[target] = 0  # success resets consecutive counter
                 self._stats[target]["sent"] += 1
                 return {**base, "status": "sent", "detail": detail or "ok"}
             except Exception as exc:  # noqa: BLE001
@@ -231,10 +227,7 @@ class AwsNotifier:
         a = ev.alert
         sev_name = a.get("severity_name") if ev.type != "resolved" else "RESOLVED"
         subject = f"[{sev_name}] Log anomaly {ev.type}"
-        body = (
-            f"{subject}\n\n{a.get('message', '')}\n\n"
-            f"{json.dumps({'event': ev.type, **a}, indent=2)}"
-        )
+        body = f"{subject}\n\n{a.get('message', '')}\n\n{json.dumps({'event': ev.type, **a}, indent=2)}"
         resp = self._client("sns").publish(
             TopicArn=self.s.sns_topic_arn,
             Subject=subject[:100],

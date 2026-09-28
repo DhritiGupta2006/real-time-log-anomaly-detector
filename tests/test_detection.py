@@ -132,7 +132,7 @@ def test_volume_drop_detection():
 def test_sustained_ceiling_trigger():
     e = DetectionEngine(settings(rate_ceiling=0.20, ceiling_evals=3))
     # Warm up baseline with 0.18 error rate
-    for i in range(30):
+    for _ in range(30):
         e.baseline.add(0.18)
     assert e.baseline.ready
 
@@ -142,4 +142,3 @@ def test_sustained_ceiling_trigger():
         m = e.tick(1000 + tick_idx + 1)
 
     assert m.severity == Severity.CRITICAL
-

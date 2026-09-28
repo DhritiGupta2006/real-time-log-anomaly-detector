@@ -11,7 +11,6 @@ Generates reproducible fixture log files for end-to-end replay testing:
 
 from __future__ import annotations
 
-import os
 import random
 from pathlib import Path
 

@@ -153,37 +153,52 @@ Internally, time is **float epoch seconds**. It is converted to ISO 8601 UTC onl
 
 ```python
 class LogEvent(BaseModel):
-    ts: float; level: str; service: str
-    message: str                     # already redacted
+    ts: float
+    level: str
+    service: str
+    message: str  # already redacted
     latency_ms: float | None = None
 
-class WindowMetric(BaseModel):       # RAW, produced by SlidingWindow
-    ts: float; service: str
-    total: int; errors: int          # over WINDOW_SECONDS
-    error_rate: float | None         # None when total == 0
-    volume_rate: float               # lines/sec over VOLUME_WINDOW_SECONDS
 
-class MetricTick(BaseModel):         # ENRICHED, produced by Engine, sent to clients
+class WindowMetric(BaseModel):  # RAW, produced by SlidingWindow
+    ts: float
+    service: str
+    total: int
+    errors: int  # over WINDOW_SECONDS
+    error_rate: float | None  # None when total == 0
+    volume_rate: float  # lines/sec over VOLUME_WINDOW_SECONDS
+
+
+class MetricTick(BaseModel):  # ENRICHED, produced by Engine, sent to clients
     metric: WindowMetric
-    baseline: float | None; sigma: float | None
-    z_score: float | None            # None while warming up or when error_rate is None
-    expected_volume: float | None    # lines/sec
+    baseline: float | None
+    sigma: float | None
+    z_score: float | None  # None while warming up or when error_rate is None
+    expected_volume: float | None  # lines/sec
     warming_up: bool
 
-class Detection(BaseModel):          # one per service per signal per evaluation
-    ts: float; service: str
+
+class Detection(BaseModel):  # one per service per signal per evaluation
+    ts: float
+    service: str
     signal: Literal["error_rate", "volume_drop"]
     status: Literal["TRIGGERED", "HOLD", "CLEAR"]
-    candidate_severity: Literal["LOW","MEDIUM","HIGH","CRITICAL"] | None
-    score: float | None              # z for error_rate, volume ratio for volume_drop
+    candidate_severity: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"] | None
+    score: float | None  # z for error_rate, volume ratio for volume_drop
     evidence: dict
 
+
 class Alert(BaseModel):
-    id: str; fingerprint: str; service: str; signal: str
-    state: Literal["OPEN","ESCALATED","RESOLVED"]
-    severity: Literal["LOW","MEDIUM","HIGH","CRITICAL"]
-    opened_at: float; updated_at: float
-    evidence: dict; history: list[dict]
+    id: str
+    fingerprint: str
+    service: str
+    signal: str
+    state: Literal["OPEN", "ESCALATED", "RESOLVED"]
+    severity: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+    opened_at: float
+    updated_at: float
+    evidence: dict
+    history: list[dict]
 ```
 
 ### 5.2 Event bus (`shared/bus.py`)
@@ -247,52 +262,62 @@ Environment variables only, every one with a default. Use `pydantic-settings` (a
 # core/window.py   (one instance per service)
 class SlidingWindow:
     def ingest(self, event: LogEvent) -> None: ...
-    def snapshot(self, now: float) -> WindowMetric: ...   # expires old buckets using `now`
+    def snapshot(self, now: float) -> WindowMetric: ...  # expires old buckets using `now`
+
 
 # core/baseline.py   (one instance per service)
 class Baseline:
-    def update(self, metric: WindowMetric) -> None: ...   # no-op while frozen
+    def update(self, metric: WindowMetric) -> None: ...  # no-op while frozen
     def freeze(self) -> None: ...
     def unfreeze(self) -> None: ...
     @property
-    def p0(self) -> float: ...                # baseline error rate (EWMA)
+    def p0(self) -> float: ...  # baseline error rate (EWMA)
     @property
-    def sigma(self) -> float: ...             # MAD-based spread, floored
+    def sigma(self) -> float: ...  # MAD-based spread, floored
     @property
-    def expected_volume(self) -> float: ...   # baseline lines/sec (EWMA)
+    def expected_volume(self) -> float: ...  # baseline lines/sec (EWMA)
     @property
-    def is_ready(self) -> bool: ...           # warm-up complete
+    def is_ready(self) -> bool: ...  # warm-up complete
     @property
     def frozen(self) -> bool: ...
+
 
 # core/detector.py   (one instance per service; holds consecutive-count state)
 class Detector:
     def evaluate(self, metric: WindowMetric, baseline: Baseline, now: float) -> list[Detection]: ...
+
     # returns one Detection per signal ("error_rate", "volume_drop") every evaluation
+
 
 # core/engine.py   (single entry point for the detector shell and replay tests)
 class Engine:
-    def ingest(self, event: LogEvent) -> None: ...        # routes to per-service window
-    def tick(self, now: float) -> TickResult: ...         # TickResult(ticks: list[MetricTick], detections: list[Detection])
+    def ingest(self, event: LogEvent) -> None: ...  # routes to per-service window
+    def tick(self, now: float) -> TickResult: ...  # TickResult(ticks: list[MetricTick], detections: list[Detection])
+
 
 # core/incident.py   (one instance per (service, signal))
 class IncidentFSM:
-    def process(self, reading: Detection, now: float) -> Alert | None: ...   # Alert only on a transition or update worth publishing
+    def process(
+        self, reading: Detection, now: float
+    ) -> Alert | None: ...  # Alert only on a transition or update worth publishing
     @property
     def state(self) -> IncidentState: ...
 
+
 # alerts/manager.py
 class IncidentRegistry:
-    def process(self, reading: Detection, now: float) -> Alert | None: ...   # creates/looks up FSM by fingerprint
+    def process(self, reading: Detection, now: float) -> Alert | None: ...  # creates/looks up FSM by fingerprint
+
 
 # alerts/notifier.py
 class BaseNotifier(ABC):
     name: str
     min_severity: Severity
+
     async def enqueue(self, alert: Alert) -> None: ...
-    async def send(self, alert: Alert) -> None: ...       # abstract; boto3 calls via asyncio.to_thread
-    async def run(self) -> None: ...                      # worker loop: retry, backoff, DLQ
-    async def drain(self) -> None: ...                    # flush on shutdown, bounded wait
+    async def send(self, alert: Alert) -> None: ...  # abstract; boto3 calls via asyncio.to_thread
+    async def run(self) -> None: ...  # worker loop: retry, backoff, DLQ
+    async def drain(self) -> None: ...  # flush on shutdown, bounded wait
 ```
 
 Rules:

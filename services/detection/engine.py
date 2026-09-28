@@ -37,13 +37,13 @@ class DetectionEngine:
         self.malformed = 0
 
         # --- hysteresis state ---
-        self._clear_streak = 0          # consecutive CLEAR ticks (below Z_CLEAR)
-        self._ceiling_streak = 0        # consecutive ticks above RATE_CEILING
-        self._anomaly_open = False       # True while the engine considers an anomaly active
+        self._clear_streak = 0  # consecutive CLEAR ticks (below Z_CLEAR)
+        self._ceiling_streak = 0  # consecutive ticks above RATE_CEILING
+        self._anomaly_open = False  # True while the engine considers an anomaly active
 
         # --- volume-drop state ---
-        self._vol_low_streak = 0        # consecutive ticks with low volume
-        self._vol_drop_active = False    # True while volume-drop alert is open
+        self._vol_low_streak = 0  # consecutive ticks with low volume
+        self._vol_drop_active = False  # True while volume-drop alert is open
 
     # ---------------------------------------------------------------------- #
     #  Ingest                                                                 #
@@ -102,9 +102,7 @@ class DetectionEngine:
         #  evaluation confirmation. This stops the baseline absorbing the first
         #  evaluations of an incident.
         # ------------------------------------------------------------------ #
-        gate_breached = (ready and sufficient and (
-            z >= self.s.z_open or ceiling_triggered
-        ))
+        gate_breached = ready and sufficient and (z >= self.s.z_open or ceiling_triggered)
 
         if gate_breached:
             if not self._anomaly_open:
@@ -224,4 +222,3 @@ class DetectionEngine:
         # else: HOLD band — maintain streak without incrementing
 
         return Severity.HIGH if self._vol_drop_active else Severity.NORMAL
-

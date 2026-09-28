@@ -78,6 +78,7 @@ def make_line(rng: random.Random, err_rate: float, now: float) -> str:
 #  Shared mutable state (written by HTTP thread, read by writer loop)        #
 # --------------------------------------------------------------------------- #
 
+
 class _SimState:
     def __init__(self, base_error: float, spike_error: float, rps: float) -> None:
         self._lock = threading.Lock()
@@ -136,6 +137,7 @@ class _SimState:
 # --------------------------------------------------------------------------- #
 #  HTTP control server (spec §7.3, demo mode only)                           #
 # --------------------------------------------------------------------------- #
+
 
 def _start_http_control(state: _SimState, bind: str, port: int, control_file: str) -> None:
     """Start a tiny HTTP server in a daemon thread for dashboard-driven control."""
@@ -225,6 +227,7 @@ def _start_http_control(state: _SimState, bind: str, port: int, control_file: st
 #  Main writer loop                                                           #
 # --------------------------------------------------------------------------- #
 
+
 def run(
     path: str,
     control: str,
@@ -294,6 +297,7 @@ def run(
 # --------------------------------------------------------------------------- #
 #  Entry point                                                                #
 # --------------------------------------------------------------------------- #
+
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)

@@ -35,7 +35,7 @@ NOTIFY_TYPES = {"opened", "escalated", "resolved"}
 
 @dataclass
 class AlertEvent:
-    type: str   # opened | escalated | updated | resolved
+    type: str  # opened | escalated | updated | resolved
     alert: dict
 
     @property
@@ -46,6 +46,7 @@ class AlertEvent:
 # --------------------------------------------------------------------------- #
 #  JSONL Journal                                                              #
 # --------------------------------------------------------------------------- #
+
 
 class Journal:
     """Append-only JSONL journal for crash-safe incident state.
@@ -86,6 +87,7 @@ class Journal:
 #  Alert manager                                                              #
 # --------------------------------------------------------------------------- #
 
+
 class AlertManager:
     """Manages a single incident at a time with the v2 FSM + hysteresis.
 
@@ -116,7 +118,7 @@ class AlertManager:
         clear_evals: int = 3,
     ) -> None:
         self.confirm_ticks = confirm_ticks
-        self.resolve_ticks = resolve_ticks   # kept for compat; FSM uses clear_evals
+        self.resolve_ticks = resolve_ticks  # kept for compat; FSM uses clear_evals
         self.cooldown_seconds = cooldown_seconds
         self.clear_evals = clear_evals
         self.active: Alert | None = None
@@ -127,10 +129,10 @@ class AlertManager:
         # "state" lives in Alert.status ("ACTIVE" = OPEN or ESCALATED, "RESOLVED")
         # We track the v2 FSM state separately so we can distinguish OPEN from ESCALATED
         # without changing the wire schema (Alert.status stays "ACTIVE" for both).
-        self._incident_state: str = "NORMAL"   # NORMAL | OPEN | ESCALATED
-        self._pending = 0                       # consecutive anomalous ticks (confirm gate)
-        self._clear_streak = 0                  # consecutive ticks below Z_CLEAR
-        self._resolved_at: float = 0.0          # for cooldown check
+        self._incident_state: str = "NORMAL"  # NORMAL | OPEN | ESCALATED
+        self._pending = 0  # consecutive anomalous ticks (confirm gate)
+        self._clear_streak = 0  # consecutive ticks below Z_CLEAR
+        self._resolved_at: float = 0.0  # for cooldown check
 
     # ---------------------------------------------------------------------- #
     #  Public helpers                                                         #
@@ -146,7 +148,6 @@ class AlertManager:
     def process(self, m: Metrics) -> list[AlertEvent]:  # noqa: PLR0912
         """Process one metrics tick, return a (possibly empty) list of AlertEvents."""
         sev = Severity(m.severity)
-        events: list[AlertEvent] = []
 
         # ---- NORMAL: no active incident ----------------------------------- #
         if self._incident_state == "NORMAL":
@@ -163,10 +164,7 @@ class AlertManager:
             self._clear_streak = 0
 
             # Cooldown: reopen the same incident if within cooldown window
-            if (
-                self.history
-                and (m.ts - self._resolved_at) < self.cooldown_seconds
-            ):
+            if self.history and (m.ts - self._resolved_at) < self.cooldown_seconds:
                 # Reopen the most-recently resolved incident
                 a = self.history[0]
                 self.history.popleft()
@@ -219,7 +217,7 @@ class AlertManager:
         # Use z_score directly from Metrics; the engine has already applied Z_CLEAR.
         # We treat severity == NORMAL as a proxy for "z < Z_CLEAR" when the engine
         # has already applied dual-threshold logic. Fall back to direct z check.
-        z_clear_threshold = getattr(self, '_z_clear', 1.5)   # injected by tests or default
+        z_clear_threshold = getattr(self, "_z_clear", 1.5)  # injected by tests or default
         is_clear = (sev == Severity.NORMAL) or (m.z_score < z_clear_threshold)
 
         if is_clear:
@@ -310,9 +308,7 @@ class AlertManager:
                     )
                     if a.status == "ACTIVE":
                         self.active = a
-                        self._incident_state = (
-                            "ESCALATED" if Severity(a.peak_severity) >= Severity.HIGH else "OPEN"
-                        )
+                        self._incident_state = "ESCALATED" if Severity(a.peak_severity) >= Severity.HIGH else "OPEN"
                     else:
                         self.history.appendleft(a)
                 except (KeyError, TypeError):

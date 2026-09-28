@@ -35,14 +35,14 @@ class EventBus(Protocol):
 class Subscription:
     """Active subscription to a topic in InMemoryBus."""
 
-    def __init__(self, bus: "InMemoryBus", topic: str, queue_size: int) -> None:
+    def __init__(self, bus: InMemoryBus, topic: str, queue_size: int) -> None:
         self.bus = bus
         self.topic = topic
         self.q: asyncio.Queue = asyncio.Queue(maxsize=queue_size)
         self.bus._subscribers[topic].append(self.q)
         self._closed = False
 
-    def __aiter__(self) -> "Subscription":
+    def __aiter__(self) -> Subscription:
         return self
 
     async def __anext__(self) -> Any:
@@ -62,7 +62,7 @@ class Subscription:
             if self.q in self.bus._subscribers[self.topic]:
                 self.bus._subscribers[self.topic].remove(self.q)
 
-    async def __aenter__(self) -> "Subscription":
+    async def __aenter__(self) -> Subscription:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -129,6 +129,7 @@ class RedisStreamsBus:
     async def _client(self):
         if self._redis is None:
             import redis.asyncio as aioredis
+
             self._redis = aioredis.from_url(self.redis_url, decode_responses=True)
         return self._redis
 

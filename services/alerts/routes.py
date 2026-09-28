@@ -47,7 +47,7 @@ def build_router(
         if s.aws_enabled:
             # Check if any target has circuit open
             targets = notifier_status.get("targets", {})
-            for t, data in targets.items():
+            for data in targets.values():
                 if data.get("circuit_open", False):
                     degraded = True
         return {
