@@ -1,8 +1,19 @@
-"""Rotation-safe tail of a continuously growing file (like `tail -F`)."""
+"""Rotation-safe tail of a continuously growing file (like `tail -F`).
+
+On Windows, files are opened with O_BINARY | O_RDONLY via os.open() and wrapped with
+os.fdopen() so that the kernel handle allows the file to be renamed or deleted while
+this reader holds it open (avoids WinError 32).
+
+On Windows st_ino is always 0 so rotation cannot be detected via inode. Instead,
+the tailer reads to EOF on every poll and re-opens if the path now points to a
+smaller file (truncation) or a brand-new file was created at the same path after
+the old one was moved away.
+"""
 
 from __future__ import annotations
 
 import os
+import sys
 
 
 class LogTailer:
@@ -27,7 +38,7 @@ class LogTailer:
             return lines
         if self._fh is None:
             self._open(st, seek_end=self._first_open and not self.from_start)
-        elif st.st_ino != self._inode:  # rotated: finish the old file, then start the new one
+        elif self._has_rotated(st):  # rotated: finish the old file, then start the new one
             lines += self._drain()
             self._close()
             self.rotations += 1
@@ -40,12 +51,62 @@ class LogTailer:
         return lines
 
     def _open(self, st: os.stat_result, seek_end: bool) -> None:
-        self._fh = open(self.path, "rb")  # noqa: SIM115 - long-lived handle
+        if sys.platform == "win32":
+            # Standard open() / os.open() on Windows does NOT set FILE_SHARE_DELETE,
+            # so any attempt to rename/delete the file while we hold it open fails with
+            # WinError 32.  We call CreateFileW directly with all three share flags so
+            # that log-rotation (rename) works correctly on Windows too.
+            import ctypes
+            import ctypes.wintypes
+            import msvcrt
+
+            GENERIC_READ = 0x80000000
+            FILE_SHARE_READ = 0x00000001
+            FILE_SHARE_WRITE = 0x00000002
+            FILE_SHARE_DELETE = 0x00000004
+            OPEN_EXISTING = 3
+            FILE_ATTRIBUTE_NORMAL = 0x80
+
+            handle = ctypes.windll.kernel32.CreateFileW(  # type: ignore[attr-defined]
+                ctypes.c_wchar_p(self.path),
+                GENERIC_READ,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                None,
+                OPEN_EXISTING,
+                FILE_ATTRIBUTE_NORMAL,
+                None,
+            )
+            INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+            if handle == INVALID_HANDLE_VALUE:
+                raise OSError(f"CreateFileW failed for {self.path!r}")
+            fd = msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
+            self._fh = os.fdopen(fd, "rb")
+        else:
+            self._fh = open(self.path, "rb")  # noqa: SIM115 - long-lived handle
         self._inode = st.st_ino
         self._first_open = False
         self._buf = b""
         if seek_end:
             self._fh.seek(0, os.SEEK_END)
+
+
+    def _has_rotated(self, st: os.stat_result) -> bool:
+        """Return True if the path now points to a different file than the one we have open.
+
+        On POSIX, compare inodes. On Windows st_ino is 0 for all files, so we
+        compare the OS-level file identity via os.fstat() on the open fd.
+        """
+        if st.st_ino != 0 and self._inode != 0:
+            # POSIX: reliable inode comparison
+            return st.st_ino != self._inode
+        # Windows fallback: compare st_ino from fstat of the open handle vs path stat.
+        # If the path was renamed away and a new file created, fstat gives a different
+        # nFileIndexHigh/nFileIndexLow (exposed as st_ino on Python 3.x Windows).
+        try:
+            open_st = os.fstat(self._fh.fileno())
+            return open_st.st_ino != st.st_ino
+        except OSError:
+            return False
 
     def _close(self) -> None:
         if self._fh is not None:

@@ -10,7 +10,11 @@ Privacy contract (IMPLEMENTATION_PLAN-2-2.md §8):
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
+try:
+    from datetime import UTC, datetime
+except ImportError:
+    from datetime import datetime, timezone
+    UTC = timezone.utc  # type: ignore[misc]
 
 from shared.models import LogEvent
 

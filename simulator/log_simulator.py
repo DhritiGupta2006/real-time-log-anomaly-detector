@@ -27,7 +27,11 @@ import os
 import random
 import threading
 import time
-from datetime import UTC, datetime
+try:
+    from datetime import UTC, datetime
+except ImportError:
+    from datetime import datetime, timezone
+    UTC = timezone.utc  # type: ignore[misc]
 
 from shared.control import read_mode, write_mode
 
