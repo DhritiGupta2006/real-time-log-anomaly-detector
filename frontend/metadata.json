@@ -1,0 +1,8 @@
+{
+  "name": "Remix Log Anomaly Detector",
+  "description": "Real-time dark-themed dashboard for log anomaly detection, incident tracking, and metrics monitoring.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+:root {
+  --bg-body: #0a0a0a;
+  --bg-surface: #111111;
+  --bg-elevated: #171717;
+  --border-color: #262626;
+  --text-primary: #ededed;
+  --text-muted: #8a8a8a;
+  --text-dim: #5c5c5c;
+
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--bg-body);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+}
+
+/* Dark scrollbars: Firefox, Chrome/Safari, Webkit */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #262626 #0a0a0a;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: #262626;
+  border-radius: 4px;
+}
+
+.num-mono {
+  font-family: var(--font-mono);
+  font-feature-settings: "tnum" 1;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes flashFade {
+  0% {
+    background-color: #262626;
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.slide-flash {
+  animation: flashFade 1.2s ease-out forwards;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.3; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 1.2s infinite ease-in-out;
+}
+
+/* Respect prefers-reduced-motion: no pulse, no flash, no slide */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

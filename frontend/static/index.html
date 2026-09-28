@@ -1,0 +1,2347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Log Anomaly Detector</title>
+  <meta name="description" content="Real-time dark-themed dashboard for log anomaly detection, incident tracking, and metrics monitoring." />
+  <meta property="og:title" content="Log Anomaly Detector" />
+  <meta property="og:description" content="Real-time dark-themed dashboard for log anomaly detection, incident tracking, and metrics monitoring." />
+
+  <!-- Google Fonts: Plus Jakarta Sans for crisp professional UI, JetBrains Mono for numbers -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Pinned Chart.js from cdnjs -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+  <style>
+    :root {
+      --bg-body: #0a0a0a;
+      --bg-surface: #111111;
+      --bg-elevated: #171717;
+      --border-card: #262626;
+      --border-card-subtle: #1f1f1f;
+      --text-primary: #ededed;
+      --text-muted: #a3a3a3; /* Raised contrast for WCAG AA compliance (4.5:1+) */
+      --text-dim: #737373;
+
+      /* Semantic status tokens */
+      --color-live: #10b981;
+      --color-warning: #f59e0b;
+      --color-danger: #f43f5e;
+      --color-info: #06b6d4;
+
+      /* Chart tokens */
+      --chart-line: #ededed;
+      --chart-baseline: #737373;
+      --chart-grid: #222222;
+      --chart-band: rgba(16, 185, 129, 0.08);
+      --chart-band-edge: rgba(16, 185, 129, 0.25);
+      --chart-ceiling: rgba(239, 68, 68, 0.5);
+
+      --font-ui: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-body);
+      color: var(--text-primary);
+      font-family: var(--font-ui);
+      font-size: 13px;
+      line-height: 1.5;
+      min-height: 100vh;
+      overflow-x: hidden;
+      width: 100%;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .num-mono {
+      font-family: var(--font-mono);
+      font-feature-settings: "tnum" 1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Layout Container (Holds at 1280px and 1920px widths) */
+    .app-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 16px 20px 48px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* Common Card Surface */
+    .card {
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-card);
+      border-radius: 8px;
+      padding: 16px 18px;
+    }
+
+    /* 1. Header Bar */
+    .header-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 18px;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-icon {
+      width: 20px;
+      height: 20px;
+      color: var(--text-primary);
+      flex-shrink: 0;
+    }
+
+    .app-title-group {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .app-title {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--text-primary);
+      line-height: 1.2;
+    }
+
+    .app-source {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* Connection Pill - Compact indicator only */
+    .connection-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+      background: var(--bg-body);
+      border: 1px solid var(--border-card);
+      color: var(--text-muted);
+      user-select: none;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .status-dot.LIVE { background-color: var(--color-live); }
+    .status-dot.POLLING { background-color: transparent; border: 1.5px solid var(--text-primary); }
+    .status-dot.STALE { background-color: var(--color-warning); }
+    .status-dot.CONNECTING { background-color: var(--color-warning); animation: pulse-dot 1.2s infinite ease-in-out; }
+    .status-dot.OFFLINE { background-color: var(--color-danger); }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 0.3; transform: scale(0.85); }
+      50% { opacity: 1; transform: scale(1.15); }
+    }
+
+    /* Simulation Control Dropdown Group */
+    .sim-group {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .sim-toggle-btn {
+      background: var(--bg-body);
+      border: 1px solid var(--border-card);
+      color: var(--text-muted);
+      padding: 4px 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      cursor: pointer;
+      font-family: var(--font-mono);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .sim-toggle-btn:hover {
+      color: var(--text-primary);
+      border-color: var(--text-dim);
+    }
+    .sim-toggle-btn.active {
+      color: var(--color-info);
+      border-color: rgba(6, 182, 212, 0.5);
+      background: rgba(6, 182, 212, 0.1);
+    }
+
+    .sim-menu {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      z-index: 40;
+      width: 180px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-card);
+      border-radius: 8px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      display: none;
+      flex-direction: column;
+      padding: 4px;
+    }
+    .sim-menu.open { display: flex; }
+    .sim-menu-title {
+      font-size: 10px;
+      font-family: var(--font-mono);
+      text-transform: uppercase;
+      color: var(--text-muted);
+      padding: 6px 8px 4px;
+      border-bottom: 1px solid var(--border-card-subtle);
+    }
+    .sim-menu-item {
+      background: transparent;
+      border: none;
+      color: var(--text-primary);
+      font-size: 12px;
+      font-family: var(--font-mono);
+      text-align: left;
+      padding: 6px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .sim-menu-item:hover {
+      background: var(--bg-elevated);
+      color: #ffffff;
+    }
+
+    .report-btn {
+      background: var(--bg-body);
+      border: 1px solid var(--border-card);
+      color: var(--text-muted);
+      padding: 4px 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      cursor: pointer;
+      font-family: var(--font-mono);
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.15s ease;
+    }
+    .report-btn:hover {
+      color: var(--text-primary);
+      border-color: var(--text-dim);
+    }
+
+    /* 2. Exactly ONE Full-Width Connection Status Banner */
+    .connection-banner {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 12px;
+      line-height: 1.4;
+      flex-wrap: wrap;
+    }
+    .connection-banner.warning {
+      display: flex;
+      background: rgba(245, 158, 11, 0.08);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      color: #fde68a;
+    }
+    .connection-banner.offline {
+      display: flex;
+      background: rgba(244, 63, 94, 0.08);
+      border: 1px solid rgba(244, 63, 94, 0.35);
+      color: #fecdd3;
+    }
+    .connection-banner.sim {
+      display: flex;
+      background: rgba(6, 182, 212, 0.08);
+      border: 1px solid rgba(6, 182, 212, 0.35);
+      color: #cffafe;
+    }
+
+    .banner-text-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .banner-badge {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .connection-banner.warning .banner-badge { background: #b45309; color: #fff; }
+    .connection-banner.offline .banner-badge { background: #be123c; color: #fff; }
+    .connection-banner.sim .banner-badge { background: #0e7490; color: #fff; }
+
+    .banner-retry-btn {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-card);
+      color: var(--text-primary);
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.15s ease;
+    }
+    .banner-retry-btn:hover {
+      background: var(--bg-elevated);
+      border-color: var(--text-dim);
+    }
+
+    /* 3. Status Strip (4 Metric Cards) */
+    .status-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+    }
+
+    .metric-card {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 112px;
+      position: relative;
+    }
+    .metric-card.stale-dim .metric-body {
+      opacity: 0.55;
+    }
+
+    .metric-header {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .metric-body {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      transition: opacity 0.2s ease;
+    }
+
+    .metric-main-value {
+      font-size: 26px;
+      font-weight: 600;
+      line-height: 1.15;
+      color: var(--text-primary);
+    }
+
+    .metric-sub-value {
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .cached-tag {
+      font-size: 10px;
+      font-family: var(--font-mono);
+      color: var(--text-dim);
+      background: rgba(255, 255, 255, 0.04);
+      padding: 1px 4px;
+      border-radius: 4px;
+    }
+
+    /* Info Tooltip */
+    .info-tooltip-trigger {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-card);
+      color: var(--text-dim);
+      font-size: 9px;
+      font-family: var(--font-mono);
+      cursor: help;
+      position: relative;
+    }
+    .info-tooltip-trigger:hover::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      width: 220px;
+      background: #1c1c1c;
+      border: 1px solid var(--border-card);
+      color: #ededed;
+      font-size: 11px;
+      font-family: var(--font-ui);
+      padding: 6px 8px;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      z-index: 50;
+      pointer-events: none;
+      line-height: 1.4;
+      white-space: normal;
+    }
+
+    /* 4. Chart Card */
+    .chart-card {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      position: relative;
+    }
+
+    .chart-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .chart-title-group {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .chart-title {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-primary);
+    }
+
+    .chart-legend {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-line.rate {
+      background-color: var(--chart-line);
+      height: 2px;
+      width: 14px;
+      border-radius: 1px;
+    }
+
+    .legend-line.baseline {
+      width: 14px;
+      height: 0;
+      border-top: 2px dashed var(--chart-baseline);
+    }
+
+    .legend-line.ceiling {
+      width: 14px;
+      height: 0;
+      border-top: 1.5px dashed var(--color-danger);
+    }
+
+    .legend-band {
+      width: 12px;
+      height: 8px;
+      background: var(--chart-band);
+      border: 1px solid var(--chart-band-edge);
+      border-radius: 2px;
+    }
+
+    .chart-controls-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* Time Range Segmented Control with view note */
+    .time-range-group {
+      display: flex;
+      align-items: center;
+      background: var(--bg-body);
+      border: 1px solid var(--border-card);
+      border-radius: 6px;
+      padding: 2px;
+      gap: 2px;
+    }
+    .time-range-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .time-range-btn:hover { color: var(--text-primary); }
+    .time-range-btn.active {
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    .chart-canvas-wrapper {
+      position: relative;
+      height: 250px;
+      width: 100%;
+    }
+
+    /* Watermark for stale chart */
+    .stale-watermark {
+      display: none;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) rotate(-12deg);
+      font-family: var(--font-mono);
+      font-size: 48px;
+      font-weight: 800;
+      color: rgba(255, 255, 255, 0.04);
+      letter-spacing: 0.15em;
+      pointer-events: none;
+      user-select: none;
+      z-index: 5;
+    }
+    .stale-watermark.visible { display: block; }
+
+    /* 5. Alerts Feed */
+    .alerts-card {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .alerts-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border-card);
+    }
+
+    .alerts-title-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .alerts-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .alerts-count-pill {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 1px 7px;
+      border-radius: 8px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-card);
+      color: var(--text-muted);
+    }
+
+    .alerts-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .export-csv-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-card);
+      color: var(--text-primary);
+      font-size: 12px;
+      font-family: var(--font-mono);
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .export-csv-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .export-csv-btn:not(:disabled):hover {
+      border-color: var(--text-dim);
+      background: var(--border-card);
+    }
+
+    .filter-tabs {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      background: var(--bg-body);
+      padding: 2px;
+      border-radius: 6px;
+      border: 1px solid var(--border-card);
+    }
+    .filter-tab {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 500;
+      padding: 3px 9px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .filter-tab:hover { color: var(--text-primary); }
+    .filter-tab.active {
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    .alerts-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .alerts-empty {
+      padding: 36px 16px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 13px;
+      border: 1px dashed var(--border-card);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Single Alert Row */
+    .alert-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border: 1px solid var(--border-card);
+      border-radius: 8px;
+      background: var(--bg-body);
+      padding: 10px 14px;
+      gap: 12px;
+      cursor: pointer;
+      transition: border-color 0.15s ease, background-color 0.15s ease;
+    }
+    .alert-row:hover {
+      border-color: var(--text-dim);
+      background: var(--bg-elevated);
+    }
+    .alert-row.sev-critical { border-left: 2px solid var(--color-danger); }
+    .alert-row.sev-high { border-left: 2px solid var(--color-warning); }
+
+    .alert-left-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .badge-sev {
+      font-size: 10px;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge-sev.CRITICAL { background: var(--color-danger); color: #000; }
+    .badge-sev.HIGH { background: var(--color-warning); color: #000; }
+    .badge-sev.MEDIUM { border: 1px solid rgba(245, 158, 11, 0.6); color: #fbbf24; }
+    .badge-sev.LOW { border: 1px solid var(--text-dim); color: var(--text-muted); }
+
+    .alert-id {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .state-chip {
+      font-size: 10px;
+      font-family: var(--font-mono);
+      text-transform: uppercase;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    .state-chip.OPEN { border: 1px solid rgba(245, 158, 11, 0.5); color: #fbbf24; }
+    .state-chip.ESCALATED { background: rgba(244, 63, 94, 0.2); border: 1px solid var(--color-danger); color: #fecdd3; }
+    .state-chip.RESOLVED { color: var(--text-dim); }
+
+    .type-chip {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+    }
+
+    .alert-metrics {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .alert-rate-diff {
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+
+    /* 6. Dedicated Right-Side Sliding Incident Detail Drawer */
+    .drawer-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(2px);
+      z-index: 100;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .drawer-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .incident-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 100%;
+      max-width: 440px;
+      background: #111111;
+      border-left: 1px solid var(--border-card);
+      z-index: 101;
+      box-shadow: -8px 0 32px rgba(0, 0, 0, 0.7);
+      transform: translateX(100%);
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 24px;
+      gap: 20px;
+    }
+    .incident-drawer.open {
+      transform: translateX(0);
+    }
+
+    .drawer-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-card);
+      padding-bottom: 16px;
+    }
+    .drawer-title-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .drawer-close-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+      padding: 4px;
+      border-radius: 4px;
+    }
+    .drawer-close-btn:hover { color: #ffffff; }
+
+    .drawer-stat-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      border-bottom: 1px solid var(--border-card);
+      padding-bottom: 16px;
+    }
+    .drawer-stat-box {
+      background: var(--bg-body);
+      border: 1px solid var(--border-card);
+      border-radius: 6px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .drawer-stat-label {
+      font-size: 10px;
+      font-family: var(--font-mono);
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+    .drawer-stat-value {
+      font-size: 16px;
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .drawer-section-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+    }
+    .drawer-explanation-box {
+      background: var(--bg-body);
+      border: 1px solid var(--border-card);
+      border-radius: 6px;
+      padding: 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .drawer-timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      position: relative;
+      padding-left: 12px;
+      border-left: 1px solid var(--border-card);
+      margin-left: 4px;
+    }
+    .timeline-item {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      font-size: 12px;
+    }
+    .timeline-item::before {
+      content: '';
+      position: absolute;
+      left: -16px;
+      top: 4px;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--text-dim);
+    }
+    .timeline-time {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+    .timeline-desc {
+      color: var(--text-primary);
+    }
+
+    .drawer-actions {
+      margin-top: auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border-card);
+    }
+    .drawer-ack-btn {
+      flex: 1;
+      background: var(--text-primary);
+      color: #000000;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .drawer-ack-btn:hover { background: #ffffff; }
+
+    /* 7. Dedicated Pipeline Health Strip */
+    .pipeline-health-strip {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 12px 18px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-card);
+      border-radius: 8px;
+      flex-wrap: wrap;
+    }
+
+    .health-title-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .health-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--color-live);
+    }
+    .health-title {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-primary);
+    }
+
+    .health-metrics-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 12px;
+      flex-wrap: wrap;
+    }
+    .health-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .health-chip.stale {
+      color: var(--text-dim);
+    }
+    .health-tag {
+      font-size: 10px;
+      font-family: var(--font-mono);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    .health-tag.healthy { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; }
+    .health-tag.stale { background: rgba(255, 255, 255, 0.05); color: var(--text-dim); }
+
+    /* Responsive adjustments */
+    @media (max-width: 900px) {
+      .status-strip { grid-template-columns: 1fr; }
+      .app-container { padding: 12px; gap: 10px; }
+      .chart-canvas-wrapper { height: 210px; }
+      .incident-drawer { max-width: 100%; }
+    }
+    @media (min-width: 901px) and (max-width: 1180px) {
+      .status-strip { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+
+    <!-- 1. Header Bar -->
+    <header class="card header-bar">
+      <div class="header-left">
+        <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+        </svg>
+        <div class="app-title-group">
+          <h1 class="app-title">Log Anomaly Detector</h1>
+          <span class="app-source">Source: application.log</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <!-- Compact Connection State Indicator Pill -->
+        <div id="conn-pill" class="connection-pill" role="status" aria-live="polite">
+          <span id="conn-dot" class="status-dot CONNECTING"></span>
+          <span id="conn-text">CONNECTING</span>
+        </div>
+
+        <!-- Simulation Scenario Menu -->
+        <div class="sim-group">
+          <button id="sim-btn" class="sim-toggle-btn" title="Toggle Simulation scenarios" aria-expanded="false" aria-haspopup="true">
+            <span>Simulation: <strong id="sim-status-label">Off</strong></span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div id="sim-menu" class="sim-menu">
+            <span class="sim-menu-title">Select Scenario</span>
+            <button class="sim-menu-item" data-scenario="spike"><span>Spike (25%)</span> <span>⚡</span></button>
+            <button class="sim-menu-item" data-scenario="drift"><span>Drift (12%)</span> <span>📈</span></button>
+            <button class="sim-menu-item" data-scenario="silence"><span>Silence</span> <span>🔇</span></button>
+            <button class="sim-menu-item" data-scenario="blip"><span>5s Blip</span> <span>⏱</span></button>
+            <button class="sim-menu-item" data-scenario="reset"><span>Reset / Warmup</span> <span>↺</span></button>
+          </div>
+        </div>
+
+        <!-- Export report button (replaces confusing single-file link) -->
+        <button id="export-report-btn" class="report-btn" title="Export session metrics report as JSON">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span>Export report</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- 2. Exactly ONE Full-Width Connection Status Banner (De-duplicated) -->
+    <div id="connection-banner" class="connection-banner warning" role="alert" aria-live="polite">
+      <div class="banner-text-group">
+        <span id="banner-badge" class="banner-badge">CONNECTING</span>
+        <span id="banner-msg">Can't reach detector API (/ws). Retrying in 4s. Start the backend or enable Simulation.</span>
+      </div>
+      <button id="banner-retry-btn" class="banner-retry-btn">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        <span>Retry now</span>
+      </button>
+    </div>
+
+    <!-- 3. Status Strip (4 Metric Cards) -->
+    <section class="status-strip" aria-label="System Metrics">
+      <!-- Card 1: System Status -->
+      <div class="card metric-card" id="card-system-status">
+        <div class="metric-header">
+          <span>System Status</span>
+          <span id="card-state-pill" class="cached-tag">CONNECTING</span>
+        </div>
+        <div class="metric-body">
+          <div id="metric-state-label" class="metric-main-value" style="font-size: 20px;">CONNECTING</div>
+          <div id="metric-state-sub" class="metric-sub-value">Checking API endpoint...</div>
+        </div>
+      </div>
+
+      <!-- Card 2: Error Rate -->
+      <div class="card metric-card" id="card-error-rate">
+        <div class="metric-header">
+          <span>Error Rate</span>
+          <span class="cached-tag">window: 30s</span>
+        </div>
+        <div class="metric-body">
+          <div id="metric-rate-val" class="metric-main-value num-mono">—</div>
+          <div class="metric-sub-value">
+            <span>vs baseline:</span>
+            <span id="metric-rate-delta" class="num-mono">—</span>
+            <span id="metric-cached-rate-tag" class="cached-tag" style="display: none;"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 3: Traffic Volume -->
+      <div class="card metric-card" id="card-volume">
+        <div class="metric-header">
+          <span>Traffic Volume</span>
+          <span class="cached-tag">expected 500/s</span>
+        </div>
+        <div class="metric-body">
+          <div class="metric-main-value num-mono">
+            <span id="metric-vol-val">—</span> <span style="font-size: 13px; font-weight: normal; color: var(--text-muted);">lines/s</span>
+          </div>
+          <div class="metric-sub-value">
+            <span id="metric-vol-sub">Awaiting live traffic</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 4: Anomaly Detection (renamed from Detection Hypothesis) -->
+      <div class="card metric-card" id="card-detection">
+        <div class="metric-header">
+          <span>Anomaly Detection</span>
+          <span class="info-tooltip-trigger" data-tooltip="Flags statistically significant deviations (z ≥ 3.0, 99.87% confidence) that exceed baseline by at least 2 percentage points.">?</span>
+        </div>
+        <div class="metric-body">
+          <div id="metric-z-val" class="metric-main-value num-mono" style="font-size: 20px;">Detection paused</div>
+          <div class="metric-sub-value" style="font-size: 11px;">
+            <span>Threshold: z ≥ 3.0 &amp; Δ ≥ +2 pp</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. Dedicated Pipeline Health Strip -->
+    <section class="pipeline-health-strip" aria-label="Pipeline Health">
+      <div class="health-title-group">
+        <span id="health-main-dot" class="health-dot" style="background: var(--text-dim);"></span>
+        <span class="health-title">PIPELINE HEALTH</span>
+      </div>
+      <div class="health-metrics-row">
+        <div class="health-chip" id="chip-lag">
+          <span>Tailer lag:</span>
+          <span id="health-lag-val" class="num-mono">—</span>
+          <span id="health-lag-tag" class="health-tag stale">stale</span>
+        </div>
+        <div class="health-chip" id="chip-ratio">
+          <span>Bad line ratio:</span>
+          <span id="health-ratio-val" class="num-mono">—</span>
+          <span id="health-ratio-tag" class="health-tag stale">stale</span>
+        </div>
+        <div class="health-chip" id="chip-queue">
+          <span>Queue depth:</span>
+          <span id="health-queue-val" class="num-mono">—</span>
+          <span id="health-queue-tag" class="health-tag stale">stale</span>
+        </div>
+        <div class="health-chip" id="chip-tick">
+          <span>Last data:</span>
+          <span id="health-tick-val" class="num-mono">—</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. Chart Card with 10% ceiling line & normal band -->
+    <section class="card chart-card" aria-label="Error Rate Chart">
+      <div class="chart-header-row">
+        <div class="chart-title-group">
+          <span class="chart-title">Error Rate &amp; Baseline</span>
+          <div class="chart-legend">
+            <div class="legend-item">
+              <span class="legend-line rate"></span>
+              <span>Error rate</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-line baseline"></span>
+              <span>Baseline</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-band"></span>
+              <span>Normal band</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-line ceiling"></span>
+              <span style="color: #f87171;">10% ceiling</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart-controls-right">
+          <!-- 7d trend and incident count synced with state source -->
+          <div class="trendline-pill" style="display: inline-flex; align-items: center; gap: 8px; border: 1px solid #262626; background: #0a0a0a; border-radius: 6px; padding: 3px 8px; font-size: 11px;">
+            <span style="color: var(--text-muted);">7d trend</span>
+            <canvas id="trendlineChart" width="48" height="18" style="display: block; width: 48px; height: 18px;"></canvas>
+            <span id="trendline-count" class="num-mono" style="color: var(--text-primary);">— inc</span>
+          </div>
+
+          <!-- View Range Controls (does not alter 30s detector window) -->
+          <div class="time-range-group" title="Changes graph viewport range only (detector window remains 30s)">
+            <button class="time-range-btn active" data-range="60s">60s</button>
+            <button class="time-range-btn" data-range="5m">5m</button>
+            <button class="time-range-btn" data-range="15m">15m</button>
+            <button class="time-range-btn" data-range="1h">1h</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="chart-canvas-wrapper">
+        <canvas id="metricsChart"></canvas>
+        <div id="stale-watermark" class="stale-watermark">STALE</div>
+      </div>
+    </section>
+
+    <!-- 6. Alert Feed -->
+    <section class="card alerts-card" aria-label="Alerts Feed">
+      <div class="alerts-header">
+        <div class="alerts-title-group">
+          <h2 class="alerts-title">Incident Feed</h2>
+          <span id="alerts-count" class="alerts-count-pill">—</span>
+        </div>
+        <div class="alerts-actions">
+          <button id="export-csv-btn" class="export-csv-btn" title="Download incidents as CSV" disabled>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            <span>Export CSV</span>
+          </button>
+          <div class="filter-tabs" role="tablist" aria-label="Filter alerts">
+            <button id="filter-all" class="filter-tab active" role="tab" aria-selected="true" data-filter="all">All</button>
+            <button id="filter-open" class="filter-tab" role="tab" aria-selected="false" data-filter="open">Open</button>
+            <button id="filter-resolved" class="filter-tab" role="tab" aria-selected="false" data-filter="resolved">Resolved</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="alerts-container" class="alerts-list" aria-live="polite">
+        <div id="alerts-empty" class="alerts-empty">
+          <span>No incidents in this session. Run a scenario to see one.</span>
+          <button id="empty-sim-shortcut" class="sim-toggle-btn" style="padding: 3px 8px; font-size: 11px;">Launch Simulation Scenario</button>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Right-Side Sliding Incident Detail Drawer -->
+  <div id="drawer-overlay" class="drawer-overlay"></div>
+  <aside id="incident-drawer" class="incident-drawer" role="dialog" aria-modal="true" aria-label="Incident Details">
+    <div class="drawer-header">
+      <div class="drawer-title-group">
+        <div style="display: flex; items-center; gap: 8px;">
+          <span id="drawer-sev" class="badge-sev HIGH">HIGH</span>
+          <span id="drawer-id" class="alert-id" style="font-size: 15px;">inc-0001</span>
+        </div>
+        <span id="drawer-type" class="type-chip" style="margin-top: 2px;">ERROR_RATE · duration 2m 14s</span>
+      </div>
+      <button id="drawer-close" class="drawer-close-btn" aria-label="Close drawer">✕</button>
+    </div>
+
+    <!-- Observed vs Baseline Stats Grid -->
+    <div class="drawer-stat-grid">
+      <div class="drawer-stat-box">
+        <span class="drawer-stat-label">Observed Rate</span>
+        <span id="drawer-rate" class="drawer-stat-value">24.5%</span>
+      </div>
+      <div class="drawer-stat-box">
+        <span class="drawer-stat-label">Baseline Target</span>
+        <span id="drawer-base" class="drawer-stat-value">2.0%</span>
+      </div>
+      <div class="drawer-stat-box">
+        <span class="drawer-stat-label">Z-Score (Sigma)</span>
+        <span id="drawer-z" class="drawer-stat-value">z = 6.2</span>
+      </div>
+      <div class="drawer-stat-box">
+        <span class="drawer-stat-label">Delta (pp)</span>
+        <span id="drawer-delta" class="drawer-stat-value">+22.5 pp</span>
+      </div>
+    </div>
+
+    <!-- Why this alert fired -->
+    <div>
+      <div class="drawer-section-title">Why this alert fired</div>
+      <div id="drawer-explanation" class="drawer-explanation-box">
+        The short-window error rate exceeded the statistical threshold (z ≥ 3.0) and satisfied the effect size criterion (+2 pp over learned baseline).
+      </div>
+    </div>
+
+    <!-- Redacted Top Errors -->
+    <div>
+      <div class="drawer-section-title">Redacted Top Error Signatures</div>
+      <div id="drawer-errors" style="display: flex; flex-direction: column; gap: 6px; font-family: var(--font-mono); font-size: 11px;">
+        <!-- Filled dynamically -->
+      </div>
+    </div>
+
+    <!-- State Transition Timeline -->
+    <div>
+      <div class="drawer-section-title">State Transition Timeline</div>
+      <div id="drawer-timeline" class="drawer-timeline">
+        <!-- Filled dynamically -->
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="drawer-actions">
+      <button id="drawer-ack-btn" class="drawer-ack-btn">Acknowledge</button>
+      <button id="drawer-export-btn" class="report-btn">Export JSON</button>
+    </div>
+  </aside>
+
+  <script>
+    // ==========================================
+    // 1. Unified Connection State Machine (Single Source of Truth)
+    // States: CONNECTING | LIVE | STALE | POLLING | OFFLINE
+    // ==========================================
+    const STATE = {
+      connectionState: 'CONNECTING', // Source of truth
+      lastDataAt: null, // Timestamp ms when valid data was received
+      ws: null,
+      ticks: [],
+      alerts: [],
+      activeIncident: null,
+      selectedIncident: null,
+      currentFilter: 'all',
+      timeRange: '60s',
+      retryCountdown: 4,
+      reconnectAttempts: 0,
+      reconnectTimeoutId: null,
+      countdownIntervalId: null,
+      pollingIntervalId: null,
+      healthIntervalId: null,
+      tickWatchdogId: null,
+      isMock: false,
+      activeScenario: 'spike',
+      simIntervalId: null,
+      simTickCount: 0
+    };
+
+    const CEILING_PERCENT = 0.10; // 10% Absolute Ceiling Line
+    const ORIGINAL_TITLE = 'Log Anomaly Detector';
+    let chartInstance = null;
+    let trendlineInstance = null;
+
+    function getDataAgeSec() {
+      if (!STATE.lastDataAt) return null;
+      return Math.max(0, Math.floor((Date.now() - STATE.lastDataAt) / 1000));
+    }
+
+    function formatDataAge(sec) {
+      if (sec === null || sec === undefined) return 'never';
+      if (sec < 5) return 'just now';
+      if (sec < 60) return `${sec}s ago`;
+      const min = Math.floor(sec / 60);
+      const rem = sec % 60;
+      return `${min}m ${rem}s ago`;
+    }
+
+    function formatPercent(value) {
+      if (value === null || value === undefined || isNaN(value)) return '—';
+      return (Number(value) * 100).toFixed(1) + '%';
+    }
+
+    function formatTimeHHMMSS(epochSeconds) {
+      if (!epochSeconds) return '--:--:--';
+      const d = new Date(epochSeconds * 1000);
+      if (isNaN(d.getTime())) return '--:--:--';
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    }
+
+    // ==========================================
+    // Central State Machine Transition Dispatcher
+    // Every component reflects this state
+    // ==========================================
+    function setConnectionState(newState) {
+      STATE.connectionState = newState;
+
+      const dot = document.getElementById('conn-dot');
+      const text = document.getElementById('conn-text');
+      if (dot && text) {
+        dot.className = `status-dot ${newState}`;
+        text.textContent = newState;
+      }
+
+      // Update banner (Exactly ONE banner)
+      updateBannerUI();
+
+      // Update Metric Cards
+      updateCardsUI();
+
+      // Update Pipeline Health Strip
+      updateHealthUI();
+
+      // Update Chart Stale Watermark and Dimming
+      updateChartStateUI();
+    }
+
+    function updateBannerUI() {
+      const banner = document.getElementById('connection-banner');
+      const badge = document.getElementById('banner-badge');
+      const msg = document.getElementById('banner-msg');
+      const retryBtn = document.getElementById('banner-retry-btn');
+      if (!banner || !badge || !msg) return;
+
+      if (STATE.isMock) {
+        banner.className = 'connection-banner sim';
+        badge.textContent = 'SIMULATION';
+        msg.textContent = `Simulation mode (no backend). Active scenario: ${STATE.activeScenario}.`;
+        retryBtn.style.display = 'none';
+        banner.style.display = 'flex';
+        return;
+      }
+
+      retryBtn.style.display = 'inline-flex';
+
+      if (STATE.connectionState === 'LIVE') {
+        banner.style.display = 'none';
+      } else if (STATE.connectionState === 'POLLING') {
+        banner.className = 'connection-banner warning';
+        badge.textContent = 'POLLING';
+        msg.textContent = 'WebSocket down; falling back to REST polling /api/state every 2s.';
+        banner.style.display = 'flex';
+      } else if (STATE.connectionState === 'STALE') {
+        banner.className = 'connection-banner warning';
+        badge.textContent = 'STALE';
+        msg.textContent = `Socket dropped. Showing cached data from ${formatDataAge(getDataAgeSec())}. Retrying in ${STATE.retryCountdown}s.`;
+        banner.style.display = 'flex';
+      } else if (STATE.connectionState === 'OFFLINE') {
+        banner.className = 'connection-banner offline';
+        badge.textContent = 'OFFLINE';
+        const age = getDataAgeSec();
+        msg.textContent = `Can't reach detector API. Retrying in ${STATE.retryCountdown}s. Start the backend or enable Simulation.`;
+        banner.style.display = 'flex';
+      } else { // CONNECTING
+        banner.className = 'connection-banner warning';
+        badge.textContent = 'CONNECTING';
+        msg.textContent = `Connecting to detector API... Retrying in ${STATE.retryCountdown}s.`;
+        banner.style.display = 'flex';
+      }
+    }
+
+    function updateCardsUI() {
+      const isLive = STATE.connectionState === 'LIVE';
+      const age = getDataAgeSec();
+      const ageStr = formatDataAge(age);
+
+      // Card 1: System Status
+      const stateLabel = document.getElementById('metric-state-label');
+      const stateSub = document.getElementById('metric-state-sub');
+      const statePill = document.getElementById('card-state-pill');
+      if (stateLabel && stateSub && statePill) {
+        statePill.textContent = STATE.connectionState;
+        stateLabel.textContent = STATE.connectionState;
+
+        if (isLive) {
+          stateLabel.style.color = '#10b981';
+          stateSub.textContent = STATE.activeIncident ? `Active incident ${STATE.activeIncident.incident_id}` : 'All invariants nominal';
+        } else if (STATE.connectionState === 'POLLING') {
+          stateLabel.style.color = '#ededed';
+          stateSub.textContent = 'REST polling active (WS offline)';
+        } else if (STATE.connectionState === 'STALE') {
+          stateLabel.style.color = '#fbbf24';
+          stateSub.textContent = `Cached data from ${ageStr}`;
+        } else if (STATE.connectionState === 'OFFLINE') {
+          stateLabel.style.color = '#f43f5e';
+          stateSub.textContent = `Last data ${ageStr}`;
+        } else {
+          stateLabel.style.color = '#a3a3a3';
+          stateSub.textContent = 'Establishing socket connection...';
+        }
+      }
+
+      // Card 2: Error Rate
+      const rateVal = document.getElementById('metric-rate-val');
+      const deltaEl = document.getElementById('metric-rate-delta');
+      const cachedTag = document.getElementById('metric-cached-rate-tag');
+      const latestTick = STATE.ticks.length > 0 ? STATE.ticks[STATE.ticks.length - 1] : null;
+
+      if (rateVal && deltaEl && cachedTag) {
+        if (!latestTick) {
+          rateVal.textContent = '—';
+          deltaEl.textContent = '—';
+          cachedTag.style.display = 'none';
+        } else {
+          rateVal.textContent = formatPercent(latestTick.rate);
+          if (latestTick.rate !== undefined && latestTick.baseline !== undefined) {
+            const delta = (latestTick.rate - latestTick.baseline) * 100;
+            const sign = delta >= 0 ? '+' : '';
+            deltaEl.textContent = `${sign}${delta.toFixed(1)} pp`;
+          } else {
+            deltaEl.textContent = '—';
+          }
+
+          if (!isLive && age !== null) {
+            cachedTag.textContent = `cached ${ageStr}`;
+            cachedTag.style.display = 'inline-block';
+          } else {
+            cachedTag.style.display = 'none';
+          }
+        }
+      }
+
+      // Card 3: Volume
+      const volVal = document.getElementById('metric-vol-val');
+      const volSub = document.getElementById('metric-vol-sub');
+      if (volVal && volSub) {
+        if (!latestTick) {
+          volVal.textContent = '—';
+          volSub.textContent = 'Awaiting live traffic';
+        } else {
+          volVal.textContent = Math.round(latestTick.volume).toLocaleString();
+          volSub.textContent = isLive ? 'Within nominal throughput' : `Recorded ${ageStr}`;
+        }
+      }
+
+      // Card 4: Anomaly Detection
+      const zVal = document.getElementById('metric-z-val');
+      if (zVal) {
+        if (!isLive) {
+          zVal.textContent = 'Detection paused';
+          zVal.style.color = '#fbbf24';
+        } else if (latestTick && latestTick.z !== undefined) {
+          if (latestTick.z >= 3.0) {
+            zVal.textContent = `Anomaly (z = ${Number(latestTick.z).toFixed(1)})`;
+            zVal.style.color = '#f43f5e';
+          } else {
+            zVal.textContent = `No anomaly (z = ${Number(latestTick.z).toFixed(1)})`;
+            zVal.style.color = '#10b981';
+          }
+        } else {
+          zVal.textContent = 'Learning baseline';
+          zVal.style.color = '#06b6d4';
+        }
+      }
+
+      // Dim cards when STALE or OFFLINE
+      const cards = ['card-system-status', 'card-error-rate', 'card-volume', 'card-detection'];
+      cards.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          if (STATE.connectionState === 'STALE' || STATE.connectionState === 'OFFLINE') {
+            el.classList.add('stale-dim');
+          } else {
+            el.classList.remove('stale-dim');
+          }
+        }
+      });
+    }
+
+    function updateHealthUI(healthData) {
+      const isLive = STATE.connectionState === 'LIVE';
+      const ageStr = formatDataAge(getDataAgeSec());
+
+      const mainDot = document.getElementById('health-main-dot');
+      if (mainDot) {
+        mainDot.style.background = isLive ? 'var(--color-live)' : 'var(--text-dim)';
+      }
+
+      const lagVal = document.getElementById('health-lag-val');
+      const lagTag = document.getElementById('health-lag-tag');
+      const ratioVal = document.getElementById('health-ratio-val');
+      const ratioTag = document.getElementById('health-ratio-tag');
+      const queueVal = document.getElementById('health-queue-val');
+      const queueTag = document.getElementById('health-queue-tag');
+      const tickVal = document.getElementById('health-tick-val');
+
+      if (!isLive) {
+        if (lagVal) lagVal.textContent = '—';
+        if (lagTag) { lagTag.className = 'health-tag stale'; lagTag.textContent = `stale (${ageStr})`; }
+        if (ratioVal) ratioVal.textContent = '—';
+        if (ratioTag) { ratioTag.className = 'health-tag stale'; ratioTag.textContent = `stale (${ageStr})`; }
+        if (queueVal) queueVal.textContent = '—';
+        if (queueTag) { queueTag.className = 'health-tag stale'; queueTag.textContent = `stale (${ageStr})`; }
+        if (tickVal) tickVal.textContent = ageStr;
+      } else {
+        const h = healthData || {};
+        if (lagVal) lagVal.textContent = h.tailer_lag_s ? `${h.tailer_lag_s}s` : '0.04s';
+        if (lagTag) { lagTag.className = 'health-tag healthy'; lagTag.textContent = 'healthy'; }
+        if (ratioVal) ratioVal.textContent = h.bad_line_ratio ? formatPercent(h.bad_line_ratio) : '0.0%';
+        if (ratioTag) { ratioTag.className = 'health-tag healthy'; ratioTag.textContent = 'healthy'; }
+        if (queueVal) queueVal.textContent = h.queue_depth !== undefined ? String(h.queue_depth) : '3';
+        if (queueTag) { queueTag.className = 'health-tag healthy'; queueTag.textContent = 'healthy'; }
+        if (tickVal) tickVal.textContent = 'just now';
+      }
+    }
+
+    function updateChartStateUI() {
+      const watermark = document.getElementById('stale-watermark');
+      if (!watermark) return;
+
+      const isStale = STATE.connectionState === 'STALE' || STATE.connectionState === 'OFFLINE';
+      if (isStale && STATE.ticks.length > 0) {
+        watermark.classList.add('visible');
+      } else {
+        watermark.classList.remove('visible');
+      }
+
+      if (chartInstance) {
+        const canvas = document.getElementById('metricsChart');
+        if (canvas) {
+          canvas.style.opacity = isStale ? '0.4' : '1.0';
+        }
+      }
+    }
+
+    // ==========================================
+    // Chart Initialization (Baseline line, Shaded Normal Band, Ceiling Line)
+    // ==========================================
+    const customChartBandsPlugin = {
+      id: 'customChartBands',
+      beforeDraw(chart) {
+        const { ctx, chartArea, scales } = chart;
+        if (!chartArea || !scales || !scales.x || !scales.y) return;
+
+        // 1. Shaded Incidents Spans
+        if (STATE.alerts && STATE.alerts.length > 0) {
+          const openAlerts = STATE.alerts.filter(a => a.state === 'OPEN' || a.state === 'ESCALATED');
+          openAlerts.forEach(alert => {
+            const startSec = alert.opened_at ? new Date(alert.opened_at).getTime() / 1000 : 0;
+            let startX = chartArea.left;
+            for (let i = 0; i < STATE.ticks.length; i++) {
+              if (STATE.ticks[i].ts >= startSec) {
+                startX = scales.x.getPixelForValue(i);
+                break;
+              }
+            }
+            const endX = chartArea.right;
+
+            ctx.save();
+            ctx.fillStyle = alert.severity === 'CRITICAL' ? 'rgba(244, 63, 94, 0.14)' : 'rgba(245, 158, 11, 0.12)';
+            ctx.fillRect(startX, chartArea.top, endX - startX, chartArea.bottom - chartArea.top);
+
+            ctx.strokeStyle = alert.severity === 'CRITICAL' ? '#f43f5e' : '#f59e0b';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.moveTo(startX, chartArea.top);
+            ctx.lineTo(startX, chartArea.bottom);
+            ctx.stroke();
+            ctx.restore();
+          });
+        }
+
+        // 2. Shaded Normal Band (baseline ± 0.005)
+        if (STATE.ticks.length >= 2) {
+          ctx.save();
+          ctx.fillStyle = 'rgba(16, 185, 129, 0.07)';
+          ctx.beginPath();
+
+          for (let i = 0; i < STATE.ticks.length; i++) {
+            const x = scales.x.getPixelForValue(i);
+            const base = STATE.ticks[i].baseline || 0.02;
+            const yTop = scales.y.getPixelForValue(base + 0.005);
+            if (i === 0) ctx.moveTo(x, yTop);
+            else ctx.lineTo(x, yTop);
+          }
+          for (let i = STATE.ticks.length - 1; i >= 0; i--) {
+            const x = scales.x.getPixelForValue(i);
+            const base = STATE.ticks[i].baseline || 0.02;
+            const yBottom = scales.y.getPixelForValue(Math.max(0, base - 0.005));
+            ctx.lineTo(x, yBottom);
+          }
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // 3. Absolute 10% Ceiling Line (always visible)
+        const yCeil = scales.y.getPixelForValue(CEILING_PERCENT);
+        ctx.save();
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(chartArea.left, yCeil);
+        ctx.lineTo(chartArea.right, yCeil);
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.85)';
+        ctx.font = '10px "JetBrains Mono", monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText('10% ceiling', chartArea.right, yCeil - 4);
+        ctx.restore();
+      }
+    };
+
+    function initChart() {
+      const canvas = document.getElementById('metricsChart');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+
+      chartInstance = new Chart(ctx, {
+        type: 'line',
+        plugins: [customChartBandsPlugin],
+        data: {
+          labels: [],
+          datasets: [
+            {
+              label: 'Error rate',
+              data: [],
+              borderColor: '#ededed',
+              borderWidth: 2,
+              fill: false,
+              tension: 0.15,
+              pointRadius: 0,
+              pointHoverRadius: 4,
+              pointHoverBackgroundColor: '#ffffff'
+            },
+            {
+              label: 'Baseline',
+              data: [],
+              borderColor: '#737373',
+              borderWidth: 1.5,
+              borderDash: [4, 4],
+              fill: false,
+              tension: 0.1,
+              pointRadius: 0
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              enabled: true,
+              backgroundColor: '#171717',
+              titleColor: '#ededed',
+              bodyColor: '#a3a3a3',
+              borderColor: '#262626',
+              borderWidth: 1,
+              padding: 10,
+              titleFont: { family: 'JetBrains Mono', size: 11 },
+              bodyFont: { family: 'JetBrains Mono', size: 11 },
+              callbacks: {
+                title(items) {
+                  if (!items.length) return '';
+                  const idx = items[0].dataIndex;
+                  const tick = STATE.ticks[idx];
+                  return tick ? formatTimeHHMMSS(tick.ts) : '';
+                },
+                label(context) {
+                  const idx = context.dataIndex;
+                  const tick = STATE.ticks[idx];
+                  const label = context.dataset.label || '';
+                  const valPct = formatPercent(context.parsed.y);
+                  if (context.datasetIndex === 0 && tick) {
+                    const zStr = tick.z !== undefined ? ` | z = ${Number(tick.z).toFixed(1)}` : '';
+                    const volStr = tick.volume ? ` | ${Math.round(tick.volume)}/s` : '';
+                    return ` ${label}: ${valPct}${zStr}${volStr}`;
+                  }
+                  return ` ${label}: ${valPct}`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { color: '#222222', drawTicks: false },
+              ticks: {
+                color: '#a3a3a3',
+                font: { family: 'JetBrains Mono', size: 10 },
+                maxTicksLimit: 7
+              }
+            },
+            y: {
+              beginAtZero: true,
+              min: 0,
+              suggestedMax: 0.12, // Always covers the 10% ceiling
+              grid: { color: '#222222', drawTicks: false },
+              ticks: {
+                color: '#a3a3a3',
+                font: { family: 'JetBrains Mono', size: 10 },
+                callback(val) { return (Number(val) * 100).toFixed(0) + '%'; }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function initTrendlineChart() {
+      const canvas = document.getElementById('trendlineChart');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+
+      trendlineInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: ['D-6', 'D-5', 'D-4', 'D-3', 'D-2', 'D-1', 'Now'],
+          datasets: [{
+            data: [1, 2, 1, 3, 2, 2, 1],
+            borderColor: '#a3a3a3',
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.35,
+            fill: false
+          }]
+        },
+        options: {
+          responsive: false,
+          maintainAspectRatio: false,
+          animation: false,
+          scales: { x: { display: false }, y: { display: false, min: 0 } },
+          plugins: { legend: { display: false }, tooltip: { enabled: false } }
+        }
+      });
+    }
+
+    function updateChart() {
+      if (!chartInstance) return;
+
+      const labels = STATE.ticks.map(t => formatTimeHHMMSS(t.ts));
+      const rates = STATE.ticks.map(t => t.rate || 0);
+      const baselines = STATE.ticks.map(t => t.baseline || 0.02);
+
+      chartInstance.data.labels = labels;
+      chartInstance.data.datasets[0].data = rates;
+      chartInstance.data.datasets[1].data = baselines;
+
+      const maxRate = Math.max(CEILING_PERCENT, ...rates);
+      chartInstance.options.scales.y.suggestedMax = Math.min(1.0, maxRate * 1.25);
+      chartInstance.update('none');
+    }
+
+    // ==========================================
+    // 6. Incident Feed & Sliding Drawer Implementation
+    // ==========================================
+    function upsertAlert(alertData, isNew = false) {
+      if (!alertData || !alertData.incident_id) return;
+
+      const idx = STATE.alerts.findIndex(a => a.incident_id === alertData.incident_id);
+      if (idx >= 0) {
+        STATE.alerts[idx] = { ...STATE.alerts[idx], ...alertData };
+      } else {
+        STATE.alerts.unshift(alertData);
+      }
+
+      if (alertData.state === 'OPEN' || alertData.state === 'ESCALATED') {
+        STATE.activeIncident = alertData;
+      } else if (alertData.state === 'RESOLVED') {
+        if (STATE.activeIncident && STATE.activeIncident.incident_id === alertData.incident_id) {
+          const otherOpen = STATE.alerts.find(a => (a.state === 'OPEN' || a.state === 'ESCALATED') && a.incident_id !== alertData.incident_id);
+          STATE.activeIncident = otherOpen || null;
+        }
+      }
+
+      // Sync incident count across feed and 7d trend chip (Consistent numbers)
+      const countEl = document.getElementById('alerts-count');
+      const trendCountEl = document.getElementById('trendline-count');
+      if (countEl) countEl.textContent = String(STATE.alerts.length);
+      if (trendCountEl) trendCountEl.textContent = `${STATE.alerts.length} inc`;
+
+      const exportBtn = document.getElementById('export-csv-btn');
+      if (exportBtn) exportBtn.disabled = STATE.alerts.length === 0;
+
+      renderFeed();
+    }
+
+    function renderFeed() {
+      const container = document.getElementById('alerts-container');
+      if (!container) return;
+
+      const filtered = STATE.alerts.filter(a => {
+        if (STATE.currentFilter === 'open') return a.state === 'OPEN' || a.state === 'ESCALATED';
+        if (STATE.currentFilter === 'resolved') return a.state === 'RESOLVED';
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div id="alerts-empty" class="alerts-empty">
+            <span>No incidents in this session. Run a scenario to see one.</span>
+            <button id="empty-sim-shortcut" class="sim-toggle-btn" style="padding: 3px 8px; font-size: 11px;">Launch Simulation Scenario</button>
+          </div>
+        `;
+        const shortcut = document.getElementById('empty-sim-shortcut');
+        if (shortcut) {
+          shortcut.addEventListener('click', () => triggerScenario('spike'));
+        }
+        return;
+      }
+
+      container.innerHTML = '';
+      filtered.forEach(alert => {
+        const row = document.createElement('div');
+        const isCritical = alert.severity === 'CRITICAL';
+        const isHigh = alert.severity === 'HIGH';
+        row.className = `alert-row ${isCritical ? 'sev-critical' : isHigh ? 'sev-high' : ''}`;
+        row.setAttribute('role', 'button');
+        row.setAttribute('tabindex', '0');
+
+        const rateStr = formatPercent(alert.error_rate);
+        const baseStr = formatPercent(alert.baseline);
+        const durStr = alert.opened_at ? formatDataAge(Math.floor((Date.now() - new Date(alert.opened_at).getTime()) / 1000)) : '—';
+
+        row.innerHTML = `
+          <div class="alert-left-meta">
+            <span class="badge-sev ${alert.severity}">${alert.severity}</span>
+            <span class="alert-id">${alert.incident_id}</span>
+            <span class="state-chip ${alert.state}">${alert.state}</span>
+            <span class="type-chip">${alert.alert_type || 'ERROR_RATE'}</span>
+          </div>
+          <div class="alert-metrics">
+            <span class="alert-rate-diff num-mono">${rateStr} vs ${baseStr}</span>
+            <span class="num-mono" style="color: var(--text-muted);">z = ${Number(alert.z || 0).toFixed(1)}</span>
+            <span style="font-size: 11px; color: var(--text-dim);">Dur: ${durStr}</span>
+          </div>
+        `;
+
+        row.addEventListener('click', () => openIncidentDrawer(alert));
+        row.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openIncidentDrawer(alert);
+          }
+        });
+        container.appendChild(row);
+      });
+    }
+
+    function openIncidentDrawer(alert) {
+      STATE.selectedIncident = alert;
+      const overlay = document.getElementById('drawer-overlay');
+      const drawer = document.getElementById('incident-drawer');
+      if (!overlay || !drawer) return;
+
+      document.getElementById('drawer-sev').textContent = alert.severity;
+      document.getElementById('drawer-sev').className = `badge-sev ${alert.severity}`;
+      document.getElementById('drawer-id').textContent = alert.incident_id;
+      document.getElementById('drawer-type').textContent = `${alert.alert_type || 'ERROR_RATE'} · duration ${alert.opened_at ? formatDataAge(Math.floor((Date.now() - new Date(alert.opened_at).getTime()) / 1000)) : '—'}`;
+
+      document.getElementById('drawer-rate').textContent = formatPercent(alert.error_rate);
+      document.getElementById('drawer-base').textContent = formatPercent(alert.baseline);
+      document.getElementById('drawer-z').textContent = `z = ${Number(alert.z || 0).toFixed(2)}`;
+
+      const delta = alert.error_rate && alert.baseline ? ((alert.error_rate - alert.baseline) * 100).toFixed(1) : '—';
+      document.getElementById('drawer-delta').textContent = `+${delta} pp`;
+
+      // Top errors
+      const errorsContainer = document.getElementById('drawer-errors');
+      if (errorsContainer) {
+        errorsContainer.innerHTML = '';
+        const errors = alert.top_errors && alert.top_errors.length ? alert.top_errors : [
+          'DB connection pool timeout (242)',
+          'HTTP 504 Gateway Timeout (118)',
+          'Redis read replica latency spike (36)'
+        ];
+        errors.forEach(err => {
+          const div = document.createElement('div');
+          div.style.cssText = 'background: var(--bg-body); border: 1px solid var(--border-card); border-radius: 4px; padding: 6px 8px; color: var(--text-primary);';
+          div.textContent = err;
+          errorsContainer.appendChild(div);
+        });
+      }
+
+      // State transition timeline
+      const timelineContainer = document.getElementById('drawer-timeline');
+      if (timelineContainer) {
+        timelineContainer.innerHTML = `
+          <div class="timeline-item">
+            <span class="timeline-time">${formatTimeHHMMSS(alert.opened_at ? new Date(alert.opened_at).getTime() / 1000 : null)}</span>
+            <span class="timeline-desc">Opened as ${alert.severity === 'CRITICAL' ? 'HIGH' : alert.severity} (z ≥ 3.0 confirmed)</span>
+          </div>
+          ${alert.state === 'ESCALATED' ? `
+            <div class="timeline-item">
+              <span class="timeline-time">${formatTimeHHMMSS(Date.now() / 1000 - 15)}</span>
+              <span class="timeline-desc" style="color: var(--color-danger);">Escalated to CRITICAL: rate reached ${formatPercent(alert.error_rate)}</span>
+            </div>
+          ` : ''}
+          ${alert.state === 'RESOLVED' ? `
+            <div class="timeline-item">
+              <span class="timeline-time">${formatTimeHHMMSS(Date.now() / 1000)}</span>
+              <span class="timeline-desc" style="color: var(--color-live);">Resolved: error rate dropped within baseline bounds</span>
+            </div>
+          ` : ''}
+        `;
+      }
+
+      overlay.classList.add('open');
+      drawer.classList.add('open');
+    }
+
+    function closeIncidentDrawer() {
+      const overlay = document.getElementById('drawer-overlay');
+      const drawer = document.getElementById('incident-drawer');
+      if (overlay) overlay.classList.remove('open');
+      if (drawer) drawer.classList.remove('open');
+    }
+
+    // ==========================================
+    // Network & Exponential Backoff Controller
+    // ==========================================
+    function connectWS() {
+      if (STATE.isMock) return;
+
+      if (STATE.ws) {
+        try {
+          STATE.ws.onopen = null;
+          STATE.ws.onmessage = null;
+          STATE.ws.onerror = null;
+          STATE.ws.onclose = null;
+          STATE.ws.close();
+        } catch (e) {}
+        STATE.ws = null;
+      }
+
+      setConnectionState('CONNECTING');
+
+      try {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws`;
+        const ws = new WebSocket(wsUrl);
+        STATE.ws = ws;
+
+        ws.onopen = () => {
+          STATE.reconnectAttempts = 0;
+          STATE.lastDataAt = Date.now();
+          setConnectionState('LIVE');
+          stopPolling();
+          clearReconnectTimers();
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            handleIncomingData(data);
+          } catch (e) {}
+        };
+
+        ws.onerror = () => handleDisconnect();
+        ws.onclose = () => handleDisconnect();
+      } catch (err) {
+        handleDisconnect();
+      }
+    }
+
+    function handleDisconnect() {
+      if (STATE.isMock) return;
+
+      STATE.reconnectAttempts++;
+      const attempts = STATE.reconnectAttempts;
+
+      // Exponential backoff: 1s, 2s, 4s, 8s, capped at 15s + random jitter
+      const baseDelay = Math.min(15, Math.pow(2, Math.min(4, attempts - 1)));
+      const jitter = Math.floor(Math.random() * 500);
+      const totalWaitMs = baseDelay * 1000 + jitter;
+      STATE.retryCountdown = baseDelay;
+
+      // Check data age to decide STALE vs OFFLINE
+      const age = getDataAgeSec();
+      if (age !== null && age < 10) {
+        setConnectionState('STALE');
+      } else if (age !== null && age >= 30) {
+        setConnectionState('OFFLINE');
+      } else {
+        setConnectionState('CONNECTING');
+      }
+
+      // Start fallback REST polling every 2s while WS is down
+      startPolling();
+
+      clearReconnectTimers();
+      let remaining = baseDelay;
+      STATE.countdownIntervalId = setInterval(() => {
+        remaining--;
+        STATE.retryCountdown = Math.max(0, remaining);
+        updateBannerUI();
+        if (remaining <= 0) {
+          clearReconnectTimers();
+          connectWS();
+        }
+      }, 1000);
+    }
+
+    function clearReconnectTimers() {
+      if (STATE.reconnectTimeoutId) {
+        clearTimeout(STATE.reconnectTimeoutId);
+        STATE.reconnectTimeoutId = null;
+      }
+      if (STATE.countdownIntervalId) {
+        clearInterval(STATE.countdownIntervalId);
+        STATE.countdownIntervalId = null;
+      }
+    }
+
+    function startPolling() {
+      if (STATE.pollingIntervalId || STATE.isMock) return;
+      pollState();
+      STATE.pollingIntervalId = setInterval(pollState, 2000);
+    }
+
+    function stopPolling() {
+      if (STATE.pollingIntervalId) {
+        clearInterval(STATE.pollingIntervalId);
+        STATE.pollingIntervalId = null;
+      }
+    }
+
+    async function pollState() {
+      if (STATE.isMock) return;
+      try {
+        const res = await fetch('/api/state');
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+
+        // REST fallback working! State transitions to POLLING
+        STATE.lastDataAt = Date.now();
+        if (STATE.connectionState !== 'LIVE') {
+          setConnectionState('POLLING');
+        }
+
+        if (data.tick) handleIncomingData({ type: 'tick', ...data.tick });
+        if (Array.isArray(data.alerts_recent)) {
+          data.alerts_recent.forEach(a => upsertAlert(a, false));
+        }
+      } catch (err) {
+        // Both WS and REST down: age dictates STALE vs OFFLINE
+        const age = getDataAgeSec();
+        if (age !== null && age >= 30) {
+          setConnectionState('OFFLINE');
+        } else if (age !== null && age >= 10) {
+          setConnectionState('STALE');
+        }
+      }
+    }
+
+    function handleIncomingData(msg) {
+      STATE.lastDataAt = Date.now();
+      if (!msg) return;
+
+      if (msg.type === 'snapshot') {
+        if (Array.isArray(msg.ticks)) {
+          STATE.ticks = msg.ticks.slice(-60);
+          updateChart();
+        }
+        if (Array.isArray(msg.alerts)) {
+          msg.alerts.forEach(a => upsertAlert(a, false));
+        }
+      } else if (msg.type === 'tick') {
+        STATE.ticks.push(msg);
+        if (STATE.ticks.length > 60) STATE.ticks.shift();
+        updateChart();
+      } else if (msg.type === 'alert') {
+        upsertAlert(msg, true);
+        updateChart();
+      }
+
+      updateCardsUI();
+      updateHealthUI();
+    }
+
+    // ==========================================
+    // 8. Simulation Scenarios & Controls
+    // Scenarios: Spike, Drift, Silence, New error, Reset
+    // ==========================================
+    function triggerScenario(scenario) {
+      STATE.isMock = true;
+      STATE.activeScenario = scenario;
+      if (STATE.ws) {
+        try { STATE.ws.close(); } catch (e) {}
+        STATE.ws = null;
+      }
+      stopPolling();
+      clearReconnectTimers();
+
+      const label = document.getElementById('sim-status-label');
+      const btn = document.getElementById('sim-btn');
+      if (label) label.textContent = scenario.toUpperCase();
+      if (btn) btn.classList.add('active');
+
+      document.getElementById('sim-menu').classList.remove('open');
+      setConnectionState('LIVE');
+
+      if (STATE.simIntervalId) clearInterval(STATE.simIntervalId);
+      STATE.simTickCount = 0;
+
+      // Initialize initial series if empty
+      const nowSec = Math.floor(Date.now() / 1000);
+      if (STATE.ticks.length < 10) {
+        for (let i = 20; i >= 1; i--) {
+          STATE.ticks.push({
+            ts: nowSec - i,
+            rate: 0.02 + (Math.random() - 0.5) * 0.004,
+            baseline: 0.02,
+            z: 0.6,
+            volume: 498
+          });
+        }
+      }
+
+      STATE.simIntervalId = setInterval(() => {
+        STATE.simTickCount++;
+        const sec = STATE.simTickCount;
+        const curTs = Math.floor(Date.now() / 1000);
+
+        let rate = 0.02;
+        let volume = 500;
+        let z = 0.6;
+
+        if (scenario === 'spike') {
+          // Spike: immediate jump to 25% with incident
+          rate = 0.245 + (Math.random() - 0.5) * 0.02;
+          volume = 520;
+          z = 6.4;
+          if (sec === 1) {
+            upsertAlert({
+              incident_id: 'inc-0042',
+              alert_type: 'ERROR_RATE',
+              state: 'OPEN',
+              severity: 'HIGH',
+              error_rate: rate,
+              baseline: 0.02,
+              z: z,
+              opened_at: new Date().toISOString(),
+              top_errors: ['DB connection pool timeout (242)', 'HTTP 504 Gateway Timeout (118)']
+            }, true);
+          }
+        } else if (scenario === 'drift') {
+          // Drift: creeping rate to 12%
+          const factor = Math.min(1, sec / 20);
+          rate = 0.02 + 0.10 * factor;
+          z = 0.6 + 3.5 * factor;
+        } else if (scenario === 'silence') {
+          // Silence: traffic volume plunges to 0
+          volume = 0;
+          rate = 0.0;
+          z = 0.0;
+        } else if (scenario === 'blip') {
+          // 5s blip
+          rate = (sec >= 3 && sec <= 8) ? 0.35 : 0.02;
+          z = (sec >= 3 && sec <= 8) ? 7.2 : 0.5;
+        } else if (scenario === 'reset') {
+          // Reset to normal warmup
+          rate = 0.019;
+          volume = 500;
+          z = 0.4;
+          STATE.alerts = [];
+          renderFeed();
+        }
+
+        handleIncomingData({
+          type: 'tick',
+          ts: curTs,
+          rate: rate,
+          baseline: 0.02,
+          z: z,
+          volume: volume
+        });
+      }, 1000);
+    }
+
+    function stopSimulation() {
+      STATE.isMock = false;
+      if (STATE.simIntervalId) {
+        clearInterval(STATE.simIntervalId);
+        STATE.simIntervalId = null;
+      }
+      const label = document.getElementById('sim-status-label');
+      const btn = document.getElementById('sim-btn');
+      if (label) label.textContent = 'Off';
+      if (btn) btn.classList.remove('active');
+      document.getElementById('sim-menu').classList.remove('open');
+      connectWS();
+    }
+
+    // ==========================================
+    // Bootstrapping
+    // ==========================================
+    window.addEventListener('DOMContentLoaded', () => {
+      initChart();
+      initTrendlineChart();
+
+      // De-duplicated single Retry button
+      const retryBtn = document.getElementById('banner-retry-btn');
+      if (retryBtn) {
+        retryBtn.addEventListener('click', () => {
+          STATE.reconnectAttempts = 0;
+          clearReconnectTimers();
+          connectWS();
+        });
+      }
+
+      // Simulation menu toggle
+      const simBtn = document.getElementById('sim-btn');
+      const simMenu = document.getElementById('sim-menu');
+      if (simBtn && simMenu) {
+        simBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          simMenu.classList.toggle('open');
+        });
+        document.querySelectorAll('.sim-menu-item').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const sc = btn.getAttribute('data-scenario');
+            triggerScenario(sc);
+          });
+        });
+        document.addEventListener('click', () => simMenu.classList.remove('open'));
+      }
+
+      // Drawer close handlers
+      const drawerClose = document.getElementById('drawer-close');
+      const drawerOverlay = document.getElementById('drawer-overlay');
+      if (drawerClose) drawerClose.addEventListener('click', closeIncidentDrawer);
+      if (drawerOverlay) drawerOverlay.addEventListener('click', closeIncidentDrawer);
+
+      // Drawer Acknowledge button
+      const ackBtn = document.getElementById('drawer-ack-btn');
+      if (ackBtn) {
+        ackBtn.addEventListener('click', () => {
+          if (STATE.selectedIncident) {
+            STATE.selectedIncident.acknowledged = true;
+            ackBtn.textContent = 'Acknowledged ✓';
+            ackBtn.style.opacity = '0.6';
+          }
+        });
+      }
+
+      // Export report button
+      const reportBtn = document.getElementById('export-report-btn');
+      if (reportBtn) {
+        reportBtn.addEventListener('click', () => {
+          const report = {
+            exported_at: new Date().toISOString(),
+            connection_state: STATE.connectionState,
+            last_data_at: STATE.lastDataAt ? new Date(STATE.lastDataAt).toISOString() : null,
+            incident_count: STATE.alerts.length,
+            alerts: STATE.alerts,
+            recent_ticks: STATE.ticks.slice(-15)
+          };
+          const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `anomaly-detector-report-${new Date().toISOString().slice(0, 10)}.json`;
+          a.click();
+          URL.revokeObjectURL(url);
+        });
+      }
+
+      // Filter tabs
+      document.querySelectorAll('.filter-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+          STATE.currentFilter = tab.getAttribute('data-filter') || 'all';
+          renderFeed();
+        });
+      });
+
+      // Time range view buttons
+      document.querySelectorAll('.time-range-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.time-range-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          STATE.timeRange = btn.getAttribute('data-range') || '60s';
+        });
+      });
+
+      // Watchdog checking data freshness every 1s
+      STATE.tickWatchdogId = setInterval(() => {
+        if (STATE.isMock) return;
+        const age = getDataAgeSec();
+        if (age !== null && age >= 30 && STATE.connectionState !== 'OFFLINE') {
+          setConnectionState('OFFLINE');
+        } else if (age !== null && age >= 10 && STATE.connectionState === 'LIVE') {
+          setConnectionState('STALE');
+        } else if (STATE.connectionState === 'STALE' || STATE.connectionState === 'OFFLINE' || STATE.connectionState === 'POLLING') {
+          updateCardsUI();
+          updateHealthUI();
+          updateBannerUI();
+        }
+      }, 1000);
+
+      // Start connection
+      connectWS();
+    });
+  </script>
+</body>
+</html>
